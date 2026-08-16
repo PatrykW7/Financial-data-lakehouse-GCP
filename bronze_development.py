@@ -103,7 +103,7 @@ def ingest_bronze_dag():
               ]
 
 
-       ### 1.4 Alpha Vantage
+       ### 1.4 Alpha Vantage - 1 request per second - trzeba bedzie zrobic funkcjonalnosc która to obsluzy 
 
        alpha_vantage_1 = requests.get(f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={TICKER_1}&outputsize=compact&apikey={API_KEY}")
        alpha_vantage_2 = requests.get(f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={TICKER_2}&outputsize=compact&apikey={API_KEY}")
