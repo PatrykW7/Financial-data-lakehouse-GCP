@@ -103,7 +103,7 @@ def ingest_bronze_dag():
               ]
 
 
-       ### 1.4 Alpha Vantage
+       ### 1.4 Alpha Vantage - 1 request per second - trzeba bedzie zrobic funkcjonalnosc która to obsluzy 
 
        alpha_vantage_1 = requests.get(f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={TICKER_1}&outputsize=compact&apikey={API_KEY}")
        alpha_vantage_2 = requests.get(f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={TICKER_2}&outputsize=compact&apikey={API_KEY}")
@@ -123,7 +123,7 @@ def ingest_bronze_dag():
 
 
 
-       ### 2.1 SEC metadata
+       ### 2.1 CompanyTickers
 
        blob = bucket.blob(f"CIK/sec_metadata_{datetime.datetime.now(ZoneInfo('Europe/Warsaw'))}")
        blob.upload_from_string(json.dumps(companyTickers.json()), content_type = "application/json")

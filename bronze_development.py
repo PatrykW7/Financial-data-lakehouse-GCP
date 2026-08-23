@@ -123,7 +123,7 @@ def ingest_bronze_dag():
 
 
 
-       ### 2.1 SEC metadata
+       ### 2.1 CompanyTickers
 
        blob = bucket.blob(f"CIK/sec_metadata_{datetime.datetime.now(ZoneInfo('Europe/Warsaw'))}")
        blob.upload_from_string(json.dumps(companyTickers.json()), content_type = "application/json")
