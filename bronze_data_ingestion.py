@@ -72,8 +72,8 @@ def ingest_bronze_dag():
         
         # COMPANIES THAT WE ARE LOOKING FOR TO ANALYZE
         company_list_cik = ["0001045810", "0000320193", "0001652044", "0000789019", "0001018724"]
-        start_time = datetime.datetime.now(ZoneInfo('Europe/Warsaw'))
-        
+        #start_time = datetime.datetime.now(ZoneInfo('Europe/Warsaw'))
+        start_time = str(datetime.datetime.now(ZoneInfo('Europe/Warsaw'))).replace(':','_').split('.')[0]
         
         # 1.1 CompanyTickers - Extract
         
@@ -153,7 +153,7 @@ def ingest_bronze_dag():
         
         # 4.2 Alpha Vantage - Save
         
-        blob = bucket.blob(f"alpha_vantage/{datetime.date.today()}/alpha_vantage_{start_time}")
+        blob = bucket.blob(f"bronze/alpha_vantage/{datetime.date.today()}/alpha_vantage_{start_time}")
         blob.upload_from_string(json.dumps(wyn), content_type = "application/json")
     
     
