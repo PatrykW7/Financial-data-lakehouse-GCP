@@ -1,3 +1,4 @@
+import argparse
 from pyspark.sql import SparkSession
 
 spark = (
@@ -7,27 +8,45 @@ spark = (
 
 )
 
-
-print("START DATAPROC LEARNING")
-
-
-data = [
-    ('Apple', 1),
-    ('NVIDIA', 2),
-    ('Microsoft', 3)
-]
+PROJECT_ID = "gcp-pde-498614"
+BUCKET_NAME = "project-dev-storage"
 
 
-df = spark.createDataFrame(
-    data, ["company", "value"]
+parser = argparse.ArgumentParser()
+
+parser.add_argument(
+    "--processing-date",
+    required=True,
 )
 
 
-df.show()
+args = parser.parse_args()
+
+processing_date = args.processing_date
 
 
-print("Spark version:", spark.version)
-print("=== END DATAPROC LEARNING ===")
+try:
+    print("START DATAPROC LEARNING")
 
 
-spark.stop()
+    data = [
+        ('Apple', 1),
+        ('NVIDIA', 2),
+        ('Microsoft', 3)
+    ]
+
+
+    df = spark.createDataFrame(
+        data, ["company", "value"]
+    )
+
+
+    df.show()
+
+
+    print("Spark version:", spark.version)
+    print("=== END DATAPROC LEARNING ===")
+
+
+finally:
+    spark.stop()

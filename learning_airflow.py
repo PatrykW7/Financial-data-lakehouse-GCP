@@ -84,6 +84,10 @@ def airflow_learning():
         batch = {
             "pyspark_batch": {
                 "main_python_file_uri" : dataproc_secret_uri,
+
+                "args": [
+                    "--processing-date", "{{ ds }}"
+                ],
             },
 
             "environment_config": {
@@ -93,13 +97,20 @@ def airflow_learning():
             },
 
 
-            "runtime_config" : {
-                "version" : "3.0"
+            "runtime_config": {
+                "version": "3.0",
+                "properties": {
+                    "spark.driver.cores": "4",
+                    "spark.executor.cores": "4",
+                    "spark.executor.instances": "1",
+                    "spark.dynamicAllocation.enabled": "false"
+                }
+
             },
 
         },
 
-        batch_id = "test-dataproc-new",
+        batch_id = "test-dataproc-new2",
     )
 
     end = EmptyOperator(
