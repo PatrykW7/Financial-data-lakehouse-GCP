@@ -97,20 +97,28 @@ def airflow_learning():
             },
 
 
+            
+
+
             "runtime_config": {
                 "version": "3.0",
                 "properties": {
+                    "spark.sql.extensions":
+                       "io.delta.sql.DeltaSparkSessionExtension",          
+                    "spark.sql.catalog.spark_catalog":
+                        "org.apache.spark.sql.delta.catalog.DeltaCatalog",
                     "spark.driver.cores": "4",
                     "spark.executor.cores": "4",
                     "spark.executor.instances": "1",
                     "spark.dynamicAllocation.enabled": "false"
-                }
+                },
+
 
             },
 
         },
 
-        batch_id = "test-dataproc-new2",
+        batch_id = "test-dataproc-new7",
     )
 
     end = EmptyOperator(
