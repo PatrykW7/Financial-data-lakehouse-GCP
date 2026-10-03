@@ -64,7 +64,7 @@ dataproc_secret_uri = response.payload.data.decode("UTF-8")
 
 @dag(
     dag_id = 'first_dag',
-    start_date = pendulum.datetime(2026, 9, 28, tz = "Europe/Warsaw"),
+    start_date = pendulum.datetime(2026, 10, 3, tz = "Europe/Warsaw"),
     schedule = None,
     catchup = False
 )
@@ -98,8 +98,6 @@ def airflow_learning():
 
 
             
-
-
             "runtime_config": {
                 "version": "3.0",
                 "properties": {
@@ -118,7 +116,7 @@ def airflow_learning():
 
         },
 
-        batch_id = "test-dataproc-new7",
+        batch_id = "test-dataproc-new12",
     )
 
     end = EmptyOperator(
