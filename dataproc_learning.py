@@ -1,6 +1,7 @@
 import argparse
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
+from datetime import date
 from pyspark.sql.types import (
                 StructType,
                 StructField,
@@ -180,8 +181,14 @@ def company_facts_processing(
         .format("delta")\
         .mode("overwrite")\
         .save(silver_path)
-            
 
+
+def check_processing_date(val: str) -> str:
+    try:
+        date.fromisoformat(val)
+    except ValueError:
+        raise ValueError(f"Niepoprawny processing_date: {val}. Oczekiwany format: YYYY-MM-DD.")
+    return val
 
 
 
@@ -199,9 +206,9 @@ def main():
 
 
     args = parser.parse_args()
-    processing_date = args.processing_date
+    processing_date_to_check = args.processing_date
 
-
+    processing_date = check_processing_date(processing_date_to_check)
     
     #print("BUCKET_NAME:", BUCKET_NAME)
 
