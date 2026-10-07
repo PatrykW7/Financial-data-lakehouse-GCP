@@ -1,5 +1,5 @@
 import argparse
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
 from datetime import date
 from pyspark.sql.types import (
@@ -17,25 +17,27 @@ from pyspark.sql.types import (
 
 
 
-def alpha_vantage_processing(
-            spark: SparkSession,
-            bronze_path:str,
-            silver_path: str
-    ):
+def read_alpha_vantage(
+        spark: SparkSession,
+        bronze_path: str
+    ) -> DataFrame:
 
-    df = (
-            spark.read\
-            .format("json")\
-            .option("multiline", True)
-            .load(bronze_path)
-        )
+    return (
+                spark.read\
+                .format("json")\
+                .option("multiline", True)
+                .load(bronze_path)
+            ) 
 
-    df.show()
-    df.printSchema()
-    
+
+def transform_alpha_vantage(
+        spark: SparkSession,
+        df: DataFrame
+    ) -> DataFrame:
+
     daily_type = df.schema["Time Series (Daily)"].dataType
     dates_list = daily_type.fieldNames()
-
+    
     rows = [
             F.struct(
                 F.lit(day).alias("date"),
@@ -61,15 +63,31 @@ def alpha_vantage_processing(
                                                 F.col("x.close").cast("double").alias("close"),
                                                 F.col("x.volume").cast("long").alias("volume"),
                                                 )
+    
+    return df_alpha_vantage
 
-    #silver_path = f"gs://{bucket_name}/silver/alpha_vantage/{processing_date}/"
+
+def write_alpha_vantage(
+        spark: SparkSession,
+        df: DataFrame,
+        silver_path: str
+    ) -> None:
+
+    df.write \
+            .format("delta")\
+            .mode("overwrite")\
+            .save(silver_path)
 
 
-    df_alpha_vantage.write \
-                    .format("delta")\
-                    .mode("overwrite")\
-                    .save(silver_path)
+def alpha_vantage_processing(
+        spark: SparkSession,
+        bronze_path: str,
+        silver_path: str
+    ) -> None:
 
+    df = read_alpha_vantage(spark, bronze_path)
+    res = transform_alpha_vantage(spark, df)
+    write_alpha_vantage(spark, res, silver_path)
 
 
 def company_forms_process(
@@ -230,13 +248,13 @@ def main():
             .getOrCreate()
 
             )
-        '''
+        
         alpha_vantage_processing(
             spark, 
             f"gs://project-dev-storage/bronze/alpha_vantage/{processing_date}/",
             f"gs://project-dev-storage/silver/alpha_vantage/{processing_date}/"
             )
-        '''
+        
 
         '''
         company_forms_process(
@@ -245,32 +263,17 @@ def main():
             f"gs://project-dev-storage/silver/company_forms/{processing_date}/"
 
         )
-        '''
+       
 
         company_facts_processing(
             spark,
             f"gs://project-dev-storage/bronze/company_facts/{processing_date}/",
             f"gs://project-dev-storage/silver/company_facts/{processing_date}/"
         )
-
-
-        
         '''
-        data = [
-            ('Apple', 1),
-            ('NVIDIA', 2),
-            ('Microsoft', 3)
-        ]
 
 
-        df = spark.createDataFrame(
-            data, ["company", "value"]
-        )
-
-
-    
-
-        '''
+     
         print("Spark version:", spark.version)
         print("=== END DATAPROC LEARNING ===")
 
