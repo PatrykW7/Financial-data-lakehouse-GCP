@@ -90,42 +90,169 @@ def alpha_vantage_processing(
     write_alpha_vantage(spark, res, silver_path)
 
 
-def company_forms_process(
+
+
+def read_company_forms_process(
         spark: SparkSession,
-        bronze_path: str,
-        silver_path: str
-):
-        
-    df_companyForms = (
+        bronze_path: str
+    ) -> DataFrame:
+
+
+    return (
         spark.read
         .format("json")
         .option("multiline", "true")
         .load(bronze_path)
         )
-        
-                
-    df_companyForms =  df_companyForms.select(
-            "filings.recent.accessionNumber",
-            "filings.recent.filingDate",
-            "filings.recent.reportDate",
-            "filings.recent.form",
-            "filings.recent.primaryDocument",
-            "filings.recent.isXBRL",
-            "filings.recent.isInlineXBRL"
-    )
-        
-        
-        
-    df_companyForms = df_companyForms.select(F.explode(F.arrays_zip(df_companyForms.accessionNumber, df_companyForms.filingDate, df_companyForms.reportDate, df_companyForms.form, df_companyForms.primaryDocument, 
-                                df_companyForms.isXBRL, df_companyForms.isInlineXBRL)).alias("x")).select(F.col("x.accessionNumber"), F.col("x.filingDate"), F.col("x.reportDate"),
-                                    F.col("x.form"), F.col("x.primaryDocument"), F.col("x.isXBRL"), F.col("x.isInlineXBRL"))
+
+
+def transform_company_form_process(
+        spark: SparkSession,
+        df: DataFrame
+    ) -> DataFrame:
+
+    df_companyForms =  df.select(
+                "filings.recent.accessionNumber",
+                "filings.recent.filingDate",
+                "filings.recent.reportDate",
+                "filings.recent.form",
+                "filings.recent.primaryDocument",
+                "filings.recent.isXBRL",
+                "filings.recent.isInlineXBRL"
+        )
             
-    df_companyForms.write\
+                    
+    df_companyForms = df_companyForms.select(F.explode(F.arrays_zip(df_companyForms.accessionNumber, df_companyForms.filingDate, df_companyForms.reportDate, df_companyForms.form, df_companyForms.primaryDocument, 
+                            df_companyForms.isXBRL, df_companyForms.isInlineXBRL)).alias("x")).select(F.col("x.accessionNumber"), F.col("x.filingDate"), F.col("x.reportDate"),
+                            F.col("x.form"), F.col("x.primaryDocument"), F.col("x.isXBRL"), F.col("x.isInlineXBRL"))
+
+    return df_companyForms
+
+
+def write_company_form_process(
+        spark: SparkSession,
+        df: DataFrame,
+        silver_path: str
+    ) -> None:
+
+
+    df.write\
         .format("delta")\
         .mode("overwrite")\
         .save(silver_path)
+
+
+def company_forms_process(
+        spark: SparkSession,
+        bronze_path: str,
+        silver_path: str
+    ) -> None:
+
+    df = read_company_forms_process(spark, bronze_path)
+    res = transform_company_form_process(spark, df)
+    write_company_form_process(spark, res, silver_path)
+
+
+
+def read_company_facts_processing(
+        spark: SparkSession,
+        bronze_path: str
+    ) -> DataFrame:
+
+    nested_units_usd = StructType([
+            StructField("start", StringType()),
+            StructField("end", StringType()),
+            StructField("val", DoubleType()),
+            StructField("accn", StringType()),
+            StructField("fy", IntegerType()),
+            StructField("fp", StringType()),
+            StructField("form", StringType()),
+            StructField("filed", StringType())
+            ]
+        )
+                
+                
+    nested_units_usd_array = MapType(
+        StringType(),
+        ArrayType(nested_units_usd)
+    )
+                
+            
+    category_schema = StructType([
+        StructField("label", StringType()),
+        StructField("description", StringType()),
+        StructField("units", nested_units_usd_array)
+    ])
+            
+            
+    ### combining schema to read 
+    
+    schema_xbrl = StructType([
+        StructField("cik", LongType()),
+        StructField("entityName", StringType()),
+        StructField(
+            "facts",
+            StructType([
+                StructField(
+                    "us-gaap",
+                    MapType(
+                        StringType(),
+                        category_schema
+                    )
+                )
+            ])
+        )
+    ])
+            
+            
+    # LOAD
+    return (
+        spark.read
+        .format("json")
+        .option("multiline", "true")
+        .schema(schema_xbrl)
+        .load(bronze_path)
+    )
+
+
+def transform_company_facts_processing(
+        spark: SparkSession,
+        df: DataFrame
+    ) -> DataFrame:
+
+    
+    df_company_facts = (df.select("cik", "entityName", F.explode("facts.`us-gaap`").alias("fact_name", "fact_details")).select("cik","entityName","fact_name",
+                F.explode("fact_details.units").alias("unit_name","unit_values")).select("cik","entityName", "fact_name","unit_name",F.explode("unit_values").alias("fact_value"))
+                .select("cik","entityName", "fact_name","unit_name", "fact_value.start", "fact_value.end", "fact_value.val", "fact_value.accn", "fact_value.fy", "fact_value.fp", "fact_value.form", "fact_value.filed"))
+
+    return df_company_facts
+
+
+def write_company_facts_processing(
+        spark: SparkSession,
+        df: DataFrame,
+        silver_path: str
+    ) -> None:
+
+
+    df.write\
+            .format("delta")\
+            .mode("overwrite")\
+            .save(silver_path)
     
 
+
+def company_facts_processing(
+        spark: SparkSession,
+        bronze_path: str,
+        silver_path: str
+    ) -> None:
+
+    df = read_company_facts_processing(spark, bronze_path)
+    res = transform_company_facts_processing(spark, df)
+    write_company_facts_processing(spark, res, silver_path)
+
+'''
 def company_facts_processing(
         spark: SparkSession,
         bronze_path: str,
@@ -200,6 +327,8 @@ def company_facts_processing(
         .mode("overwrite")\
         .save(silver_path)
 
+'''
+
 
 def check_processing_date(val: str) -> str:
     try:
@@ -248,13 +377,13 @@ def main():
             .getOrCreate()
 
             )
-        
+        '''
         alpha_vantage_processing(
             spark, 
             f"gs://project-dev-storage/bronze/alpha_vantage/{processing_date}/",
             f"gs://project-dev-storage/silver/alpha_vantage/{processing_date}/"
             )
-        
+        '''
 
         '''
         company_forms_process(
@@ -263,17 +392,32 @@ def main():
             f"gs://project-dev-storage/silver/company_forms/{processing_date}/"
 
         )
-       
+        '''
 
         company_facts_processing(
             spark,
             f"gs://project-dev-storage/bronze/company_facts/{processing_date}/",
             f"gs://project-dev-storage/silver/company_facts/{processing_date}/"
         )
+
+
+        
         '''
+        data = [
+            ('Apple', 1),
+            ('NVIDIA', 2),
+            ('Microsoft', 3)
+        ]
 
 
-     
+        df = spark.createDataFrame(
+            data, ["company", "value"]
+        )
+
+
+    
+
+        '''
         print("Spark version:", spark.version)
         print("=== END DATAPROC LEARNING ===")
 
