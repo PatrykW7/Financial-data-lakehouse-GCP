@@ -252,82 +252,6 @@ def company_facts_processing(
     res = transform_company_facts_processing(spark, df)
     write_company_facts_processing(spark, res, silver_path)
 
-'''
-def company_facts_processing(
-        spark: SparkSession,
-        bronze_path: str,
-        silver_path: str
-):
-    nested_units_usd = StructType([
-        StructField("start", StringType()),
-        StructField("end", StringType()),
-        StructField("val", DoubleType()),
-        StructField("accn", StringType()),
-        StructField("fy", IntegerType()),
-        StructField("fp", StringType()),
-        StructField("form", StringType()),
-        StructField("filed", StringType())
-        ]
-    )
-            
-            
-    nested_units_usd_array = MapType(
-        StringType(),
-        ArrayType(nested_units_usd)
-    )
-            
-            
-    category_schema = StructType([
-        StructField("label", StringType()),
-        StructField("description", StringType()),
-        StructField("units", nested_units_usd_array)
-    ])
-            
-            
-    ### combining schema to read 
-    
-    schema_xbrl = StructType([
-        StructField("cik", LongType()),
-        StructField("entityName", StringType()),
-        StructField(
-            "facts",
-            StructType([
-                StructField(
-                    "us-gaap",
-                    MapType(
-                        StringType(),
-                        category_schema
-                    )
-                )
-            ])
-        )
-    ])
-            
-            
-    # LOAD
-    df_companyFacts = (
-        spark.read
-        .format("json")
-        .option("multiline", "true")
-        .schema(schema_xbrl)
-        .load(bronze_path)
-    )
-            
-            
-    #df_companyFacts.select("cik", "entityName", F.explode("facts.`us-gaap`").alias("key", "value")).select("cik", "entityName", "key", F.explode("value")).show()
-    df_company_facts = (df_companyFacts.select("cik", "entityName", F.explode("facts.`us-gaap`").alias("fact_name", "fact_details")).select("cik","entityName","fact_name",
-            F.explode("fact_details.units").alias("unit_name","unit_values")).select("cik","entityName", "fact_name","unit_name",F.explode("unit_values").alias("fact_value"))
-            .select("cik","entityName", "fact_name","unit_name", "fact_value.start", "fact_value.end", "fact_value.val", "fact_value.accn", "fact_value.fy", "fact_value.fp", "fact_value.form", "fact_value.filed"))
-    
-            
-            
-    ###### 3.2. CompanyFacts - Save to Delta Table
-    df_company_facts.write\
-        .format("delta")\
-        .mode("overwrite")\
-        .save(silver_path)
-
-'''
 
 
 def check_processing_date(val: str) -> str:
@@ -356,6 +280,9 @@ def main():
     processing_date_to_check = args.processing_date
 
     processing_date = check_processing_date(processing_date_to_check)
+    #processing_date = "2026-10-11"
+
+    print("PROCESSING DATE:", processing_date)
     
     #print("BUCKET_NAME:", BUCKET_NAME)
 
@@ -377,22 +304,39 @@ def main():
             .getOrCreate()
 
             )
-        '''
+
+
+        print("ALPHA SILVER:",f"gs://project-dev-storage/silver/alpha_vantage/{processing_date}/"
+)
+
+        
+     
         alpha_vantage_processing(
             spark, 
             f"gs://project-dev-storage/bronze/alpha_vantage/{processing_date}/",
             f"gs://project-dev-storage/silver/alpha_vantage/{processing_date}/"
             )
-        '''
+        
 
-        '''
+        print(
+            "FORMS SILVER:",
+            f"gs://project-dev-storage/silver/company_forms/{processing_date}/"
+        )
+
+        
         company_forms_process(
             spark,
             f"gs://project-dev-storage/bronze/company_forms/{processing_date}/",
             f"gs://project-dev-storage/silver/company_forms/{processing_date}/"
 
         )
-        '''
+
+
+        print(
+            "FACTS SILVER:",
+            f"gs://project-dev-storage/silver/company_facts/{processing_date}/"
+        )
+        
 
         company_facts_processing(
             spark,

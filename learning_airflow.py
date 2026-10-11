@@ -83,7 +83,7 @@ def airflow_learning():
         gcp_conn_id = "google_cloud_default",
         batch = {
             "pyspark_batch": {
-                "main_python_file_uri" : dataproc_secret_uri,
+                "main_python_file_uri" : "gs://project-dev-storage/jobs/dataproc_learning.py",
 
                 "args": [
                     "--processing-date", "{{ ds }}"
@@ -116,7 +116,7 @@ def airflow_learning():
 
         },
 
-        batch_id = "test-dataproc-new12",
+        batch_id = "test-dataproc-new202",
     )
 
     end = EmptyOperator(
