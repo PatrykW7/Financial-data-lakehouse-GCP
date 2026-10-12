@@ -57,14 +57,63 @@ def transform_alpha_vantage(
 
 
     df_alpha_vantage = temp_alpha_vantage.select("symbol", F.col("x.date").try_cast("date").alias("date"),
-                                                F.col("x.open").cast("double").alias("open"),
-                                                F.col("x.high").cast("double").alias("high"),
-                                                F.col("x.low").cast("double").alias("low"),
-                                                F.col("x.close").cast("double").alias("close"),
-                                                F.col("x.volume").cast("long").alias("volume"),
+                                                F.col("x.open").try_cast("double").alias("open"),
+                                                F.col("x.high").try_cast("double").alias("high"),
+                                                F.col("x.low").try_cast("double").alias("low"),
+                                                F.col("x.close").try_cast("double").alias("close"),
+                                                F.col("x.volume").try_cast("long").alias("volume"),
                                                 )
     
     return df_alpha_vantage
+
+
+def valid_data_alpha_vantage(
+    spark:  SparkSession, 
+    df: DataFrame) -> tuple[DataFrame, DataFrame]:
+
+    condition = (F.col("symbol").isNull() |
+                F.col("date").isNull()   |
+                F.col("open").isNull()   |
+                F.col("high").isNull()   |
+                F.col("low").isNull()    |
+                F.col("close").isNull()  |
+                F.col("volume").isNull()
+    )
+
+
+    df_valid = (
+            df
+            .filter(
+                ~condition
+            )
+            .withColumn("error_reason", F.when(
+                                                F.col("symbol").isNull(), "symbol col is NULL")
+                                        .when(
+                                                F.col("date").isNull(), "date is NULL")
+                                        .when(
+                                                F.col("open").isNull(), "open is NULL")
+                                        .when(
+                                                F.col("high").isNull(), "high is NULL")
+                                        .when(
+                                                F.col("low").isNull(), "low is NULL")
+                                        .when(
+                                                F.col("close").isNull(), "close is NULL")
+                                        .when(
+                                            F.col("volume").isNull(), "volume is NULL")                                      
+            )
+        )
+
+
+
+
+    df_invalid = (
+        df.filter(
+            condition            
+        )
+    )
+
+    return df_valid, df_invalid
+
 
 
 def write_alpha_vantage(
@@ -79,16 +128,38 @@ def write_alpha_vantage(
             .save(silver_path)
 
 
+
+def write_invalid_data_alpha_vantage(
+    spark: SparkSession,
+    df: DataFrame,
+    dlq_path: str
+    )-> None:
+
+    df.write \
+    .format("delta") \
+    .mode("append") \
+    .save(dlq_path)
+
+
+
+
 def alpha_vantage_processing(
         spark: SparkSession,
         bronze_path: str,
-        silver_path: str
+        silver_path: str,
+        dlq_path: str
     ) -> None:
 
     df = read_alpha_vantage(spark, bronze_path)
     res = transform_alpha_vantage(spark, df)
-    write_alpha_vantage(spark, res, silver_path)
-
+    df_valid, df_invalid = valid_data_alpha_vantage(spark, res)
+    write_alpha_vantage(spark, df_valid, silver_path)
+    if not df_invalid.isEmpty():
+        write_invalid_data_alpha_vantage(
+            spark, 
+            df_invalid,
+            dlq_path
+        )
 
 
 
