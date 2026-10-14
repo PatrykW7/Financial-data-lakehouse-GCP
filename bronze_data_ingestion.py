@@ -18,6 +18,9 @@ from pandas import DataFrame
 PROJECT_ID = "gcp-pde-498614"
 SECRET_ID_key = "alpha-vantage-api-key"
 SECRET_ID_email = "sec-email"
+storage_client = storage.Client()
+bucket = storage_client.get_bucket("project-dev-storage")
+
 
 client = secretmanager.SecretManagerServiceClient()
 
@@ -60,6 +63,7 @@ headers = {'User-Agent': API_email}
 
  # COMPANIES THAT WE ARE LOOKING FOR TO ANALYZE
 #company_list_cik = ["0001045810", "0000320193", "0001652044", "0000789019", "0001018724"]
+company_list_cik = ["0001045810"]
 
 start_time = datetime.datetime.now(ZoneInfo('Europe/Warsaw'))
 start_time = str(start_time).split(' ')[0].replace('-','_')
@@ -82,7 +86,7 @@ def extract_company_tickers(company_list_cik: list) -> tuple[DataFrame, dict, li
     return df_companyTickers, raw_tickers, tickers_list
 
 
-
+### COMPANY TICKERS 
 def save_company_tickers(
     df: DataFrame,
     js: dict) -> None:
@@ -90,8 +94,7 @@ def save_company_tickers(
             # staged - filred rows
             # bronze - original data
         
-        storage_client = storage.Client()
-        bucket = storage_client.get_bucket("project-dev-storage")
+        
 
         ### SAVING DF TO BRONZE LAYER, RAW DATA
         blob = bucket.blob(f"bronze/company_tickers/{datetime.date.today()}/companyTickers_{start_time}")
@@ -101,6 +104,108 @@ def save_company_tickers(
         arrow_table = pa.Table.from_pandas(df,preserve_index=False)
         
         write_deltalake(f"gs://project-dev-storage/staging/company_tickers/companyTickers_stg_{datetime.date.today()}/", arrow_table, mode = "overwrite")
+
+
+
+### COMPANY FORMS
+def extract_company_forms(company_list_cik: list) -> list[dict]:
+    # 2.1 CompanyForms Extract
+                    
+    #  Defined list of company names, based on company_list_cik
+                      
+    wyn = []
+    for i in company_list_cik:
+        fillingMetadata_i = requests.get(f'https://data.sec.gov/submissions/CIK{i}.json', headers = headers)
+        wyn.append(fillingMetadata_i.json())
+
+        time.sleep(2)
+
+    return wyn
+
+def save_company_forms(
+    wyn: list[dict]
+    ) -> None:
+
+    # 2.2 CompanyForms - Save
+    # Saving in Raw format 
+    blob = bucket.blob(f"bronze/company_forms/{datetime.date.today()}/companyForms_{start_time}")
+    blob.upload_from_string(json.dumps(wyn), content_type = "application/json")
+
+
+
+### COMPANY FACTS
+def extract_company_facts(company_list_cik: list) -> list[dict]:
+    wyn = []
+    for i in company_list_cik:
+        companyFacts_i = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{i}.json", headers = headers)
+        wyn.append(companyFacts_i.json())
+    
+        time.sleep(2)
+    return wyn
+
+
+
+def save_company_facts(wyn: list[dict]) -> None:
+    blob = bucket.blob(f"bronze/company_facts/{datetime.date.today()}/companyFacts_{start_time}")
+    blob.upload_from_string(json.dumps(wyn), content_type = "application/json")
+    
+
+
+def save_dlq(
+    source: str,
+    invalid_data: list[dict],
+    ) -> None:
+
+
+    if invalid_data:
+        blob = bucket.blob(f"dlq/ingestion/{datetime.date.today()}/{source}_{start_time}")
+        blob.upload_from_string(json.dumps(invalid_data), content_type = "application/json")
+
+
+
+
+### ALPHA VANTAGE 
+def extract_alpha_vantage(tickers_list: list[str]) -> tuple[list[dict], list[dict]]:
+    valid_data = []
+    invalid_data = []
+    for i in tickers_list:
+        alpha_vantage_i = requests.get(f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={i}&outputsize=compact&apikey={API_KEY}")
+        data = alpha_vantage_i.json()
+
+        condition = (
+                        isinstance(data, dict) 
+                        and isinstance(data.get("Meta Data"), dict) 
+                        and isinstance(data.get("Time Series (Daily)"), dict)
+                    )
+
+        if condition == True:
+            valid_data.append(data)
+        else:
+            invalid_data.append({
+                "source": "alpha_vantage",
+                "reason_error": "INVALID_JSON_STRUCTURE",
+                "raw_data": data})
+
+    
+    return valid_data, invalid_data 
+        
+
+'''
+def extract_alpha_vantage(tickers_list: list[str]) -> list[dict]:
+    wyn = []
+    for i in tickers_list:
+        alpha_vantage_i = requests.get(f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={i}&outputsize=compact&apikey={API_KEY}")
+        wyn.append(alpha_vantage_i.json())
+
+        time.sleep(2)
+    return wyn
+'''
+
+def save_alpha_vantage(wyn: list[dict]) -> None:
+    blob = bucket.blob(f"bronze/alpha_vantage/{datetime.date.today()}/alpha_vantage_{start_time}")
+    blob.upload_from_string(json.dumps(wyn), content_type = "application/json")
+
+
 
 
 
@@ -116,20 +221,65 @@ def save_company_tickers(
 
 def ingest_bronze_dag() -> None:
 
-    # tickers list is needed for Alpha vantage
+ 
     @task
-    def ingest_company_tickers():
-        company_list_cik = ["0001045810"]
+    def ingest_company_tickers(
+        company_list_cik: list[str]
+    ) -> list[str]:
         df_companyTickers, raw_tickers, tickers_list = extract_company_tickers(company_list_cik)
         save_company_tickers(df_companyTickers, raw_tickers)
 
         return tickers_list
 
-    tickers_list = ingest_company_tickers()
+    tickers_list = ingest_company_tickers(company_list_cik)
 
+
+
+    @task
+    def ingest_company_forms(
+        company_list_cik: list[str]
+    ) -> None:
+        wyn = extract_company_forms(company_list_cik)
+        save_company_forms(wyn)
+
+    ingest_c_forms = ingest_company_forms(company_list_cik)
     
 
+
+    @task
+    def ingest_company_facts(
+        company_list_cik: list[str]
+    ) -> None:
+        
+        wyn = extract_company_facts(company_list_cik)
+        save_company_facts(wyn)
+    
+    ingest_c_facts = ingest_company_facts(company_list_cik)
+
+
+    @task
+    def ingest_alpha_vantage(
+        tickers_list: list[str]
+    ) -> None:
+        
+        valid_data, invalid_data  = extract_alpha_vantage(tickers_list)
+        
+        if valid_data:
+            save_alpha_vantage(valid_data)
+
+        if invalid_data:
+            save_dlq("alpha_vantage", invalid_data )
+
+
+    ingest_a_vantage = ingest_alpha_vantage(tickers_list)
+
+
+
+    #tickers_list >> ingest_a_vantage
+
+
 dag = ingest_bronze_dag()
+
 
     
       
