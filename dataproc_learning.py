@@ -16,13 +16,33 @@ from pyspark.sql.types import (
 )
 
 
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--processing-date",
+    required=True,
+)
+
+
+def check_processing_date(val: str) -> str:
+    try:
+        date.fromisoformat(val)
+    except ValueError:
+        raise ValueError(f"Niepoprawny processing_date: {val}. Oczekiwany format: YYYY-MM-DD.")
+    return val
+
+
+args = parser.parse_args()
+processing_date_to_check = args.processing_date
+
+processing_date = check_processing_date(processing_date_to_check)
+
 
 def read_alpha_vantage(
         spark: SparkSession,
         bronze_path: str
     ) -> DataFrame:
 
-    return (
+    return (    
                 spark.read\
                 .format("json")\
                 .option("multiline", True)
@@ -81,10 +101,10 @@ def valid_data_alpha_vantage(
     )
 
 
-    df_valid = (
+    df_invalid = (
             df
             .filter(
-                ~condition
+                condition
             )
             .withColumn("error_reason", F.when(
                                                 F.col("symbol").isNull(), "symbol col is NULL")
@@ -104,11 +124,9 @@ def valid_data_alpha_vantage(
         )
 
 
-
-
-    df_invalid = (
+    df_valid = (
         df.filter(
-            condition            
+            ~condition            
         )
     )
 
@@ -129,16 +147,16 @@ def write_alpha_vantage(
 
 
 
-def write_invalid_data_alpha_vantage(
+def write_invalid_data(
     spark: SparkSession,
     df: DataFrame,
-    dlq_path: str
+    source: str
     )-> None:
 
     df.write \
     .format("delta") \
     .mode("append") \
-    .save(dlq_path)
+    .save(f"gs://project-dev-storage/dlq/transformation/{source}/{processing_date}")
 
 
 
@@ -147,18 +165,22 @@ def alpha_vantage_processing(
         spark: SparkSession,
         bronze_path: str,
         silver_path: str,
-        dlq_path: str
     ) -> None:
 
     df = read_alpha_vantage(spark, bronze_path)
     res = transform_alpha_vantage(spark, df)
     df_valid, df_invalid = valid_data_alpha_vantage(spark, res)
-    write_alpha_vantage(spark, df_valid, silver_path)
+
+
+    if not df_valid.isEmpty():
+        write_alpha_vantage(spark, df_valid, silver_path)
+
+
     if not df_invalid.isEmpty():
-        write_invalid_data_alpha_vantage(
+        write_invalid_data(
             spark, 
             df_invalid,
-            dlq_path
+            "alpha_vantage"
         )
 
 
@@ -200,6 +222,54 @@ def transform_company_form_process(
     return df_companyForms
 
 
+
+def valid_data_company_form_process(
+        spark: SparkSession,
+        df: DataFrame
+    ) -> tuple[DataFrame, DataFrame]:
+
+    condition = (
+        
+            F.col("accessionNumber").isNull() |
+            F.col("filingDate").isNull() |
+            F.col("reportDate").isNull() |
+            F.col("form").isNull() |
+            F.col("primaryDocument").isNull() |
+            F.col("isXBRL").isNull() |
+            F.col("isInlineXBRL").isNull()
+        
+    )
+
+
+    df_invalid = (
+        df
+        .filter(condition)
+        .withColumn("error_reason",
+                    F.when(
+                        F.col("accessionNumber").isNull(), "accessionNumber IS NULL"
+                    )
+                    .when(
+                        F.col("filingDate").isNull(), "filingDate IS NULL"
+                    )
+                    .when(F.col("reportDate").isNull(), "reportDate IS NULL"
+                    )
+                    .when(F.col("form").isNull(), "form IS NULL"
+                    )
+                    .when(F.col("primaryDocument").isNull(), "primaryDocument IS NULL"
+                    )
+                    .when(F.col("isXBRL").isNull(), "isXBRL IS NULL"
+                    )
+                    .when(F.col("isInlineXBRL").isNull(), "isInlineXBRL IS NULL")
+                    
+                    )
+    )
+
+
+    df_valid = df.filter(~condition)
+    return df_valid, df_invalid
+
+
+
 def write_company_form_process(
         spark: SparkSession,
         df: DataFrame,
@@ -221,8 +291,13 @@ def company_forms_process(
 
     df = read_company_forms_process(spark, bronze_path)
     res = transform_company_form_process(spark, df)
-    write_company_form_process(spark, res, silver_path)
+    df_valid, df_invalid = valid_data_company_form_process(spark, res)
 
+    if not df_valid.isEmpty():
+        write_company_form_process(spark, df_valid, silver_path)
+
+    if not df_invalid.isEmpty():
+        write_invalid_data(spark, df_invalid, "company_forms")
 
 
 def read_company_facts_processing(
@@ -319,18 +394,12 @@ def company_facts_processing(
         silver_path: str
     ) -> None:
 
-    df = read_company_facts_processing(spark, bronze_path)
-    res = transform_company_facts_processing(spark, df)
-    write_company_facts_processing(spark, res, silver_path)
+    pass
+    #df = read_company_facts_processing(spark, bronze_path)
+    #res = transform_company_facts_processing(spark, df)
+   
 
 
-
-def check_processing_date(val: str) -> str:
-    try:
-        date.fromisoformat(val)
-    except ValueError:
-        raise ValueError(f"Niepoprawny processing_date: {val}. Oczekiwany format: YYYY-MM-DD.")
-    return val
 
 
 
@@ -340,17 +409,7 @@ def main():
     BUCKET_NAME = "project-dev-storage"
 
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--processing-date",
-        required=True,
-    )
-
-
-    args = parser.parse_args()
-    processing_date_to_check = args.processing_date
-
-    processing_date = check_processing_date(processing_date_to_check)
+    
     #processing_date = "2026-10-11"
 
     print("PROCESSING DATE:", processing_date)
