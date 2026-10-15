@@ -108,9 +108,42 @@ def save_company_tickers(
 
 
 ### COMPANY FORMS
+def extract_company_forms(company_list_cik: list) -> tuple[list[dict], list[dict]]:
+    # 2.1 CompanyForms Extract               
+    #  Defined list of company names, based on company_list_cik
+    valid_data = []  
+    invalid_data = []
+    wyn = []
+    for i in company_list_cik:
+        fillingMetadata_i = requests.get(f'https://data.sec.gov/submissions/CIK{i}.json', headers = headers)
+        #wyn.append(fillingMetadata_i.json())
+
+        data = fillingMetadata_i.json()
+        condition = (
+            isinstance(data, dict) and
+            isinstance(data.get("filings"), dict)
+        )
+
+        if condition == True:
+            valid_data.append(data)
+
+        else:
+            invalid_data.append({
+                "source": "company_forms",
+                "cik": i,
+                "reason_error": "INVALID_JSON_STRUCTURE",
+                "row_data": data
+                })
+
+
+        time.sleep(2)
+
+    return valid_data, invalid_data
+
+
+'''
 def extract_company_forms(company_list_cik: list) -> list[dict]:
-    # 2.1 CompanyForms Extract
-                    
+    # 2.1 CompanyForms Extract               
     #  Defined list of company names, based on company_list_cik
                       
     wyn = []
@@ -121,6 +154,7 @@ def extract_company_forms(company_list_cik: list) -> list[dict]:
         time.sleep(2)
 
     return wyn
+'''
 
 def save_company_forms(
     wyn: list[dict]
@@ -134,6 +168,40 @@ def save_company_forms(
 
 
 ### COMPANY FACTS
+def extract_company_facts(company_list_cik: list) -> tuple[list[dict], list[dict]]:
+    valid_data = []
+    invalid_data = []
+
+    for i in company_list_cik:
+        companyFacts_i = requests.get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{i}.json", headers = headers)
+        data = companyFacts_i.json()
+
+        condition = (
+            isinstance(data, dict) and 
+            isinstance(data.get("facts"), dict)
+        )
+
+        if condition:
+            valid_data.append(data)
+
+
+        else:
+            invalid_data.append({
+                "source": "company_facts",
+                "cik": i,
+                "reason_error": "INVALID_JSON_STRUCTURE",
+                "raw_data": data
+                })
+
+        
+    
+        time.sleep(2)
+
+    return valid_data, invalid_data
+
+
+
+'''
 def extract_company_facts(company_list_cik: list) -> list[dict]:
     wyn = []
     for i in company_list_cik:
@@ -142,7 +210,7 @@ def extract_company_facts(company_list_cik: list) -> list[dict]:
     
         time.sleep(2)
     return wyn
-
+'''
 
 
 def save_company_facts(wyn: list[dict]) -> None:
@@ -183,10 +251,14 @@ def extract_alpha_vantage(tickers_list: list[str]) -> tuple[list[dict], list[dic
         else:
             invalid_data.append({
                 "source": "alpha_vantage",
+                "cik": i,
                 "reason_error": "INVALID_JSON_STRUCTURE",
                 "raw_data": data})
 
-    
+
+        time.sleep(2)
+
+
     return valid_data, invalid_data 
         
 
@@ -239,8 +311,17 @@ def ingest_bronze_dag() -> None:
     def ingest_company_forms(
         company_list_cik: list[str]
     ) -> None:
-        wyn = extract_company_forms(company_list_cik)
-        save_company_forms(wyn)
+        
+        valid_data, invalid_data = extract_company_forms(company_list_cik)
+
+        if valid_data:
+            save_company_forms(valid_data)
+
+        if invalid_data:
+            save_dlq(
+                "company_forms",
+                invalid_data
+            )
 
     ingest_c_forms = ingest_company_forms(company_list_cik)
     
@@ -251,8 +332,13 @@ def ingest_bronze_dag() -> None:
         company_list_cik: list[str]
     ) -> None:
         
-        wyn = extract_company_facts(company_list_cik)
-        save_company_facts(wyn)
+        valid_data, invalid_data = extract_company_facts(company_list_cik)
+        if valid_data:
+            save_company_facts(valid_data)
+
+
+        if invalid_data:
+            save_dlq("company_facts", invalid_data)
     
     ingest_c_facts = ingest_company_facts(company_list_cik)
 
