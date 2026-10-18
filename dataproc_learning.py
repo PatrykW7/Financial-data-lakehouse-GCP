@@ -374,6 +374,76 @@ def transform_company_facts_processing(
     return df_company_facts
 
 
+
+def valid_data_company_facts(
+    spark: SparkSession,
+    df:DataFrame
+    ) -> tuple[DataFrame, DataFrame]:
+
+
+    condition = (
+        F.col("cik").isNull() |
+        F.col("entityName").isNull() |
+        F.col("fact_name").isNull() |
+        F.col("unit_name").isNull() |
+        #F.col("start").isNull() |
+        F.col("end").isNull() |
+        F.col("val").isNull() |
+        F.col("accn").isNull() |
+        #F.col("fy").isNull() |
+        #F.col("fp").isNull() |
+        F.col("form").isNull() |
+        F.col("filed").isNull()
+    )
+
+
+    df_valid = df.filter(
+        ~condition
+    )
+
+
+    df_invalid = (df.filter(
+        condition
+        )
+    ).withColumn("error_reason", F.when(
+                                        F.col("cik").isNull(), "cik IS NULL" 
+                                        )
+                                 .when(
+                                        F.col("entityName").isNull(), "entityName IS NULL"
+                                        )
+                                .when(
+                                        F.col("fact_name").isNull(), "fact_name IS NULL"
+                                        )
+                                .when(
+                                        F.col("unit_name").isNull(), "unit_name IS NULL"
+                                        )
+                                #.when(F.col("start").isNull(), "start IS NULL")
+                                .when(
+                                        F.col("end").isNull(), "end IS NULL"
+                                        )
+                                .when(
+                                        F.col("val").isNull(), "val IS NULL"
+                                        )
+                                .when(
+                                        F.col("accn").isNull(), "accn IS NULL"
+                                        )
+                                #.when(F.col("fy").isNull(), "fy IS NULL")
+                                #.when(F.col("fp").isNull(), "fp IS NULL")
+                                .when(
+                                        F.col("form").isNull(), "form IS NULL"
+                                        )
+                                .when(
+                                        F.col("filed").isNull(), "filed IS NULL"
+                                )
+    )                       
+
+    
+    return df_valid, df_invalid
+
+
+
+
+
 def write_company_facts_processing(
         spark: SparkSession,
         df: DataFrame,
@@ -394,10 +464,21 @@ def company_facts_processing(
         silver_path: str
     ) -> None:
 
-    pass
     #df = read_company_facts_processing(spark, bronze_path)
     #res = transform_company_facts_processing(spark, df)
-   
+    
+    df = read_company_facts_processing(spark, bronze_path)
+    res = transform_company_facts_processing(spark, df)
+
+    df_valid, df_invalid = valid_data_company_facts(spark, res)
+
+
+    if not df_valid.isEmpty():
+        write_company_facts_processing(spark, df_valid, silver_path)
+
+
+    if not df_invalid.isEmpty():
+        write_invalid_data(spark, df_invalid, "company_facts")
 
 
 
