@@ -1,11 +1,21 @@
 import pendulum
-from airflow.decorators import dag
+from airflow.decorators import dag, task
 from airflow.operators.empty import EmptyOperator
 from airflow.providers.google.cloud.operators.dataproc import (
         DataprocCreateBatchOperator,
 )
 from google.cloud import secretmanager
-
+from bronze_data_ingestion import (
+    extract_company_tickers,
+    save_company_tickers,
+    extract_company_forms,
+    save_company_forms,
+    extract_company_facts,
+    save_company_facts,
+    extract_alpha_vantage,
+    save_alpha_vantage,
+    save_dlq,
+)
 
 project_id = "gcp-pde-498614"
 secret_region = "dataproc_region"
@@ -71,10 +81,82 @@ dataproc_secret_uri = response.payload.data.decode("UTF-8")
 
 
 def airflow_learning():
+    company_list_cik = ["0001045810"]
+
+    processing_date = "{{ ds }}"
+    
     start = EmptyOperator(
         task_id = "start"
     )
 
+    @task
+    def ingest_company_tickers(
+        company_list_cik: list[str],
+        processing_date: str
+    ) -> list[str]:
+        df_companyTickers, raw_tickers, tickers_list = extract_company_tickers(company_list_cik)
+        save_company_tickers(df_companyTickers, raw_tickers, processing_date)
+
+        return tickers_list
+
+
+    tickers_list = ingest_company_tickers(company_list_cik, processing_date)
+
+
+    @task
+    def ingest_company_forms(
+        company_list_cik: list[str],
+        processing_date: str
+    ) -> None:
+        
+        valid_data, invalid_data = extract_company_forms(company_list_cik)
+
+        if valid_data:
+            save_company_forms(valid_data, processing_date)
+
+        if invalid_data:
+            save_dlq(
+                "company_forms",
+                invalid_data,
+                processing_date
+            )
+    
+    ingest_c_forms = ingest_company_forms(company_list_cik, processing_date)
+
+
+    @task
+    def ingest_company_facts(
+        company_list_cik: list[str],
+        processing_date: str
+    ) -> None:
+        
+        valid_data, invalid_data = extract_company_facts(company_list_cik)
+        if valid_data:
+            save_company_facts(valid_data, processing_date)
+
+
+        if invalid_data:
+            save_dlq("company_facts", invalid_data, processing_date)
+        
+    ingest_c_facts = ingest_company_facts(company_list_cik, processing_date)
+
+
+    @task
+    def ingest_alpha_vantage(
+        tickers_list: list[str],
+        processing_date: str
+    ) -> None:
+        
+        valid_data, invalid_data  = extract_alpha_vantage(tickers_list)
+        
+        if valid_data:
+            save_alpha_vantage(valid_data, processing_date)
+
+        if invalid_data:
+            save_dlq("alpha_vantage", invalid_data, processing_date)
+    
+    
+    ingest_a_vantage = ingest_alpha_vantage(tickers_list, processing_date)
 
     process = DataprocCreateBatchOperator(
         task_id = "process",
@@ -116,7 +198,7 @@ def airflow_learning():
 
         },
 
-        batch_id = "test-dataproc-new202",
+        batch_id = "test-dataproc-new204",
     )
 
     end = EmptyOperator(
@@ -124,6 +206,14 @@ def airflow_learning():
     )
 
 
-    start >> process >> end
+    start >> tickers_list
+    start >> ingest_c_forms
+    start >> ingest_c_facts
+
+    ingest_a_vantage >> process
+    ingest_c_forms >> process
+    ingest_c_facts >> process
+
+    process >> end
 
 dag = airflow_learning()
