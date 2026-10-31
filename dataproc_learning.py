@@ -173,6 +173,8 @@ def alpha_vantage_processing(
 
 
     if not df_valid.isEmpty():
+        df_valid.withColumn("processed_at", F.current_timestamp())
+        df_valid.withColumn("processing_date", F.lit(processing_date))
         write_alpha_vantage(spark, df_valid, silver_path)
 
 
@@ -205,6 +207,7 @@ def transform_company_form_process(
     ) -> DataFrame:
 
     df_companyForms =  df.select(
+                "cik",
                 "filings.recent.accessionNumber",
                 "filings.recent.filingDate",
                 "filings.recent.reportDate",
@@ -215,8 +218,8 @@ def transform_company_form_process(
         )
             
                     
-    df_companyForms = df_companyForms.select(F.explode(F.arrays_zip(df_companyForms.accessionNumber, df_companyForms.filingDate, df_companyForms.reportDate, df_companyForms.form, df_companyForms.primaryDocument, 
-                            df_companyForms.isXBRL, df_companyForms.isInlineXBRL)).alias("x")).select(F.col("x.accessionNumber"), F.col("x.filingDate"), F.col("x.reportDate"),
+    df_companyForms = df_companyForms.select(F.col("cik"), F.explode(F.arrays_zip(df_companyForms.accessionNumber, df_companyForms.filingDate, df_companyForms.reportDate, df_companyForms.form, df_companyForms.primaryDocument, 
+                            df_companyForms.isXBRL, df_companyForms.isInlineXBRL)).alias("x")).select(F.col("cik"), F.col("x.accessionNumber"), F.col("x.filingDate"), F.col("x.reportDate"),
                             F.col("x.form"), F.col("x.primaryDocument"), F.col("x.isXBRL"), F.col("x.isInlineXBRL"))
 
     return df_companyForms
@@ -232,7 +235,7 @@ def valid_data_company_form_process(
         
             F.col("accessionNumber").isNull() |
             F.col("filingDate").isNull() |
-            F.col("reportDate").isNull() |
+           # F.col("reportDate").isNull() |
             F.col("form").isNull() |
             F.col("primaryDocument").isNull() |
             F.col("isXBRL").isNull() |
@@ -294,6 +297,8 @@ def company_forms_process(
     df_valid, df_invalid = valid_data_company_form_process(spark, res)
 
     if not df_valid.isEmpty():
+        df_valid.withColumn("processed_at", F.current_timestamp())
+        df_valid.withColumn("processing_date", F.lit(processing_date))
         write_company_form_process(spark, df_valid, silver_path)
 
     if not df_invalid.isEmpty():
@@ -308,12 +313,13 @@ def read_company_facts_processing(
     nested_units_usd = StructType([
             StructField("start", StringType()),
             StructField("end", StringType()),
-            StructField("val", DoubleType()),
+            StructField("val", DecimalType(38, 9)),
             StructField("accn", StringType()),
             StructField("fy", IntegerType()),
             StructField("fp", StringType()),
             StructField("form", StringType()),
-            StructField("filed", StringType())
+            StructField("filed", StringType()),
+            StructField("frame", StringType())
             ]
         )
                 
@@ -369,7 +375,7 @@ def transform_company_facts_processing(
     
     df_company_facts = (df.select("cik", "entityName", F.explode("facts.`us-gaap`").alias("fact_name", "fact_details")).select("cik","entityName","fact_name",
                 F.explode("fact_details.units").alias("unit_name","unit_values")).select("cik","entityName", "fact_name","unit_name",F.explode("unit_values").alias("fact_value"))
-                .select("cik","entityName", "fact_name","unit_name", "fact_value.start", "fact_value.end", "fact_value.val", "fact_value.accn", "fact_value.fy", "fact_value.fp", "fact_value.form", "fact_value.filed"))
+                .select("cik","entityName", "fact_name","unit_name", "fact_value.start", "fact_value.end", "fact_value.val", "fact_value.accn", "fact_value.fy", "fact_value.fp", "fact_value.form", "fact_value.filed", "fact_value.frame"))
 
     return df_company_facts
 
@@ -474,6 +480,8 @@ def company_facts_processing(
 
 
     if not df_valid.isEmpty():
+        df_valid.withColumn("processed_at", F.current_timestamp())
+        df_valid.withColumn("processing_date", F.lit(processing_date))
         write_company_facts_processing(spark, df_valid, silver_path)
 
 
