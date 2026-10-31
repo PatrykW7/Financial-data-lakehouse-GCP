@@ -5,7 +5,7 @@ from airflow.providers.google.cloud.operators.dataproc import (
         DataprocCreateBatchOperator,
 )
 from google.cloud import secretmanager
-from bronze_data_ingestion import (
+from financial_pipeline.bronze_ingest import (
     extract_company_tickers,
     save_company_tickers,
     extract_company_forms,
@@ -89,6 +89,7 @@ def airflow_learning():
         task_id = "start"
     )
 
+    
     @task
     def ingest_company_tickers(
         company_list_cik: list[str],
@@ -158,6 +159,7 @@ def airflow_learning():
     
     ingest_a_vantage = ingest_alpha_vantage(tickers_list, processing_date)
 
+
     process = DataprocCreateBatchOperator(
         task_id = "process",
         project_id = project_id,
@@ -198,14 +200,14 @@ def airflow_learning():
 
         },
 
-        batch_id = "test-dataproc-new204",
+        batch_id = "test-dataproc-new209",
     )
 
     end = EmptyOperator(
         task_id = "end"
     )
 
-
+ 
     start >> tickers_list
     start >> ingest_c_forms
     start >> ingest_c_facts
@@ -213,7 +215,9 @@ def airflow_learning():
     ingest_a_vantage >> process
     ingest_c_forms >> process
     ingest_c_facts >> process
+  
 
+  
     process >> end
 
 dag = airflow_learning()
