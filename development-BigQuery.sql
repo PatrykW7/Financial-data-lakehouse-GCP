@@ -47,11 +47,46 @@ BEGIN
   );
 
   CREATE OR REPLACE TEMPORARY TABLE tmp_company_facts AS 
-  SELECT cik, entityName FROM `gcp-pde-498614.raw.ext_company_facts`;
-  /*
-  INSERT INTO raw.dimCompany (created_at, cik, company_name, valid_from_date, valid_to_date, is_current) SELECT DISTINCT CURRENT_TIMESTAMP(), cik, entityName, CURRENT_DATE(), DATE(9999,12,31), TRUE
-  FROM `gcp-pde-498614.raw.ext_company_facts`;
-  */
+  SELECT DISTINCT CURRENT_TIMESTAMP AS created_at, cik, entityName AS company_name, CURRENT_DATE AS valid_from_date, DATE(9999, 12, 31) AS valid_to_date, True AS is_current, False AS       
+  is_deleted FROM `gcp-pde-498614.raw.ext_company_facts`;
+
+
+  # UPSERT
+  MERGE INTO raw.dimCompany tgt USING (
+    
+    --- INSERT COMPLETELY NEW ROWS
+    SELECT src_null.*, CAST('NULL' AS INT64) AS merge_key, 'INSERT' AS action FROM tmp_company_facts src_null
+    LEFT JOIN raw.dimCompany tgt ON src_null.cik = tgt.cik --AND tgt.is_current = True
+    WHERE tgt.cik IS NULL OR tgt.cik <> src_null.cik
+
+    UNION ALL
+
+    --- UPDATES RECORDS THAT CHANGED IN SOURCE 
+    SELECT src.*, src.cik AS merge_key, 'UPDATE' AS action FROM tmp_company_facts src
+    JOIN raw.dimCompany tgt ON src.cik = tgt.cik
+    WHERE tgt.is_current = True AND tgt.company_name <> src.company_name
+
+    UNION ALL
+    
+    --- DELETE
+    SELECT tgt.created_at, tgt.cik, tgt.company_name, tgt.valid_from_date, tgt.valid_to_date, 
+    tgt.is_current, tgt.is_deleted, tgt.cik AS merge_key, 'DELETE' AS action FROM raw.dimCompany tgt
+    LEFT JOIN tmp_company_facts src ON tgt.cik = src.cik
+    WHERE tgt.is_current = True AND src.cik IS NULL 
+    
+  ) src
+
+  ON tgt.cik = src.merge_key AND tgt.is_current = True
+
+  WHEN MATCHED AND (tgt.company_name <> src.company_name) THEN 
+  UPDATE SET 
+    company_name = src.company_name,
+    valid_from_date = src.valid_from_date,
+    is_current = False
+
+  WHEN NOT MATCHED THEN
+  INSERT (created_at, cik, company_name, valid_from_date, valid_to_date, is_current, is_deleted)
+  VALUES (src.created_at, src.cik, src.company_name, src.valid_from_date, src.valid_to_date, src.is_current, False);
 END;
 
 
@@ -59,32 +94,15 @@ CALL raw.insert_dimCompany();
 
 SELECT * FROM tmp_company_facts
 
-SELECT * FROM raw.dimCompany
-
-SELECT * FROM tmp_company_facts
-
---ALTER TABLE raw.dimCompany ADD COLUMN id_deleted BOOL
-
---UPDATE raw.dimCompany SET id_deleted = False WHERE DWHIdCompany = 27115
-
---TRUNCATE TABLE raw.dimCompany
-
-SELECT * FROM `gcp-pde-498614.raw.ext_company_facts` LIMIT 100;
+--SELECT * FROM raw.dimCompany
 
 
-SELECT DATE(9999,12,31)
-
--------------------------------------------
+SELECT * FROM raw.dimCompany 
 
 
-SELECT * FROM `gcp-pde-498614.raw.ext_company_facts` LIMIT 10;
+SELECT CAST(NULL AS INT64)
 
-
-SELECT * FROM raw.dimCompany
-
-
-
-
+--CREATE OR REPLACE TABLE raw.dimCompany AS SELECT * FROM raw.dimCompany_kopia
 
 
 
