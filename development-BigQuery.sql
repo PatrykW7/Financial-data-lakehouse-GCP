@@ -119,8 +119,6 @@ ALTER TABLE raw.dimCompany ALTER COLUMN DWHIdCompany SET GENERATED ALWAYS AS IDE
 
 
 ############## DIM_TICKER
-
-
 SELECT ddl
 FROM `gcp-pde-498614.raw.INFORMATION_SCHEMA.TABLES`
 WHERE table_name = 'dimCompany';
@@ -128,8 +126,8 @@ WHERE table_name = 'dimCompany';
 
 CREATE OR REPLACE TABLE raw.dimTicker(
   DWHIdTicker INT64 GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
-  created_at DATETIME,
-  CIK INT64,
+  created_at TIMESTAMP,
+  cik STRING,
   ticker STRING,
   exchange STRING,
   valid_from_date DATE,
@@ -167,13 +165,55 @@ BEGIN
   FROM `gcp-pde-498614.raw.ext_company_tickers`;
 
 
+  MERGE INTO `gcp-pde-498614.raw.dimTicker` tgt
+  USING (
+    -- INSERT NEW ROWS
+    SELECT src.*, 'NULL' AS merge_key, 'INSERT' AS action FROM tmp_company_tickers src
+    LEFT JOIN `gcp-pde-498614.raw.dimTicker` tgt ON src.cik = tgt.cik AND tgt.is_current = True 
+    WHERE tgt.cik IS NULL OR (src.ticker <> tgt.ticker OR src.exchange <> tgt.exchange)
+
+    UNION ALL
+
+    -- UPDATE ROW 
+    SELECT src.*, src.cik AS merge_key, 'UPDATE' AS action FROM tmp_company_tickers src
+    INNER JOIN `gcp-pde-498614.raw.dimTicker` tgt ON src.cik = tgt.cik 
+    WHERE tgt.is_current = TRUE
+    AND   (src.ticker <> tgt.ticker
+    OR    src.exchange <> tgt.exchange
+          )
+
+    UNION ALL
+
+    -- DELETED ROWS
+    SELECT tgt.created_at, tgt.cik, tgt.ticker, tgt.exchange, tgt.valid_from_date, tgt.valid_to_date, tgt.is_current, tgt.cik AS merge_key, 'DELETE' AS action
+    FROM `gcp-pde-498614.raw.dimTicker` tgt 
+    LEFT JOIN tmp_company_tickers src ON tgt.cik = src.cik 
+    WHERE src.cik IS NULL AND tgt.is_current = True
+    
+  ) src
+
+  ON src.merge_key = tgt.cik AND tgt.is_current = True
+
+  WHEN MATCHED AND src.action IN ('UPDATE','DELETE') THEN
+  UPDATE SET 
+    tgt.valid_to_date = src.valid_from_date,
+    tgt.is_current = False
+  
+  
+  WHEN NOT MATCHED THEN 
+  INSERT (created_at, cik, ticker, exchange, valid_from_date, valid_to_date, is_current)
+  VALUES (src.created_at, src.cik, src.ticker, src.exchange, src.valid_from_date, src.valid_to_date, src.is_current);
+  
 END;
 
+
+SELECT * FROM `gcp-pde-498614.raw.dimTicker`
 
 
 CALL raw.insert_dimTicker();
 
-SELECT * FROM tmp_company_tickers
+SELECT ddl FROM `gcp-pde-498614.raw.INFORMATION_SCHEMA.TABLES`
+WHERE table_name = 'dimTicker'
 
 
 
